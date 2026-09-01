@@ -1,3 +1,6 @@
+#include "util/owsg_err.h"
+#include "graphics/shader.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
@@ -146,6 +149,43 @@ int main(void)
     info("OpenGL version: %s", glGetString(GL_VERSION));
     info("OpenGL renderer: %s", glGetString(GL_RENDERER));
 
+    /* --- load the shader program --- */
+    shader_t shader;
+    owsg_err err = {0};
+    const char *vertShader = "shaders/vert/shader.vert";
+    const char *fragShader = "shaders/frag/shader.frag";
+    if (!shaderCreate(vertShader, fragShader, &shader, &err))
+    {
+        error("Shader program loading failed: " ERR_FMT, ERR_ARG(err));
+        glfwTerminate();
+        return EXIT_FAILURE;
+    }
+    info("Loaded vertex shader: '%s' successfully!", vertShader);
+    info("Loaded fragment shader: '%s' successfully!", fragShader);
+
+    /* --- Define triangle vertex data --- */
+    float vertices[] = {
+        -0.5f,
+        -0.5f,
+        0.0f,
+        0.5f,
+        -0.5f,
+        0.0f,
+        0.0f,
+        0.5f,
+        0.0f,
+    };
+
+    /* --- Set up VAO + VBO --- */
+    unsigned int vao, vbo;
+    glGenVertexArrays(1, &vao);
+    glBindVertexArray(vao);
+    glGenBuffers(1, &vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), NULL);
+    glEnableVertexAttribArray(0);
+
     /* --- The render loop --- */
     while (!glfwWindowShouldClose(window))
     {
@@ -154,11 +194,18 @@ int main(void)
         glClearColor(0.0f, 0.0f, 0.0f, 1.0f); // Black
         glClear(GL_COLOR_BUFFER_BIT);
 
+        shaderUse(&shader);
+        glBindVertexArray(vao);
+        glDrawArrays(GL_TRIANGLES, 0, 3);
+
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
 
     info("Exiting...");
+    glDeleteVertexArrays(1, &vao);
+    glDeleteBuffers(1, &vbo);
+    shaderDestroy(&shader);
     glfwDestroyWindow(window);
     glfwTerminate();
     return EXIT_SUCCESS;

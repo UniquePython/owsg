@@ -12,12 +12,6 @@ bool readFile(const char *path, size_t *outLength, char **outData, owsg_err *err
         return false;
     }
 
-    if (outLength == NULL)
-    {
-        owsgErrSet(err, "Output length pointer is NULL");
-        return false;
-    }
-
     if (outData == NULL)
     {
         owsgErrSet(err, "Output data pointer is NULL");
@@ -91,7 +85,9 @@ bool readFile(const char *path, size_t *outLength, char **outData, owsg_err *err
         return false;
     }
 
-    *outLength = length;
+    if (outLength != NULL)
+        *outLength = length;
+
     *outData = data;
 
     return true;
