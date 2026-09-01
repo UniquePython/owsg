@@ -143,7 +143,8 @@ int main(void)
         glfwTerminate();
         return EXIT_FAILURE;
     }
-    info("GL function pointers version %d loaded successfully!", version);
+    info("OpenGL version: %s", glGetString(GL_VERSION));
+    info("OpenGL renderer: %s", glGetString(GL_RENDERER));
 
     /* --- The render loop --- */
     while (!glfwWindowShouldClose(window))
