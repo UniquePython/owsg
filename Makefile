@@ -87,9 +87,7 @@ STD_FLAGS := -std=c11
 #       make target" error on a stale .d file.
 DEP_FLAGS := -MMD -MP
 
-# Debug build by default. TODO(you): introduce a `release` target later
-# with -O2/-O3 (and probably -DNDEBUG) once we care about performance -
-# not needed yet, and premature to add before we have anything slow.
+# Debug build by default.
 OPT_FLAGS := -O0 -g
 
 CFLAGS            := $(STD_FLAGS) $(OPT_FLAGS) $(DEP_FLAGS) $(WARN_FLAGS) $(OWN_INCLUDES) $(THIRDPARTY_INCLUDES) $(GLFW_CFLAGS)

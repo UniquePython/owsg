@@ -38,13 +38,14 @@ bool readFile(const char *path, size_t *outLength, char **outData, owsg_err *err
         return false;
     }
 
-    size_t length = (size_t)ftell(file);
-    if (length < 0)
+    long rawLength = ftell(file);
+    if (rawLength < 0)
     {
         owsgErrSet(err, "Failed to determine size of file '%s'", path);
         fclose(file);
         return false;
     }
+    size_t length = (size_t)rawLength;
 
     if (fseek(file, 0, SEEK_SET) != 0)
     {
