@@ -31,7 +31,7 @@ DEPS := $(OBJS:.o=.d)
 # glad/gl.h lives at include/thirdparty/glad/glad/gl.h - so the search
 # root is include/thirdparty/glad, not include/thirdparty itself).
 OWN_INCLUDES        := -I$(INC_DIR)
-THIRDPARTY_INCLUDES := -isystem $(INC_DIR)/thirdparty/glad
+THIRDPARTY_INCLUDES := -isystem $(INC_DIR)/thirdparty/glad -isystem $(INC_DIR)/thirdparty/cglm
 
 # pkg-config resolves GLFW's cflags/libs for the machine we're building
 # on, rather than us hardcoding -lglfw and hoping the search paths line
