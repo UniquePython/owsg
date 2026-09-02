@@ -84,6 +84,50 @@ static void framebufferSizeCallback(GLFWwindow *window, int width, int height)
     glViewport(0, 0, width, height);
 }
 
+static camera_t *g_camera = NULL;
+static bool firstMouse = true;
+static float lastX = 0.0f;
+static float lastY = 0.0f;
+
+/*
+ * GLFW cursor position callback - fired whenever the mouse moves
+ * while the window has focus.
+ *
+ * xpos, ypos: absolute cursor position in screen coordinates (NOT a
+ *             delta - GLFW doesn't give you deltas directly, you
+ *             compute them yourself against the last known position).
+ */
+static void cursorPosCallback(GLFWwindow *window, double xpos, double ypos)
+{
+    (void)window;
+
+    /* Prevent a large jump when mouse input starts. */
+    if (firstMouse)
+    {
+        lastX = (float)xpos;
+        lastY = (float)ypos;
+        firstMouse = false;
+        return;
+    }
+
+    /* Calculate mouse movement since the previous callback. */
+    float xOffset = (float)xpos - lastX;
+
+    /*
+     * GLFW screen Y increases downward, but our camera expects
+     * positive Y movement to mean "look up", so flip the sign.
+     */
+    float yOffset = lastY - (float)ypos;
+
+    /* Store current position for the next callback. */
+    lastX = (float)xpos;
+    lastY = (float)ypos;
+
+    /* Update camera orientation. */
+    if (g_camera != NULL)
+        cameraProcessMouseMovement(g_camera, xOffset, yOffset);
+}
+
 /*
  * Interleaved cube vertex data: position (x,y,z) followed by color
  * (r,g,b) per vertex, 6 floats each.
@@ -253,6 +297,10 @@ int main(void)
     glfwSetFramebufferSizeCallback(window, framebufferSizeCallback);
     info("GLFW framebuffer size callback set successfully!");
 
+    /* Register mouse callback */
+    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+    glfwSetCursorPosCallback(window, cursorPosCallback);
+
     /* --- load GL function pointers via glad --- */
     int version = gladLoadGL(glfwGetProcAddress);
     if (version == 0)
@@ -307,6 +355,7 @@ int main(void)
 
     camera_t camera;
     cameraInit(&camera, (vec3){0.0f, 0.0f, 3.0f});
+    g_camera = &camera;
 
     float deltaTime = 0.0f;
     float lastFrame = 0.0f;

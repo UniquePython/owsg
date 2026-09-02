@@ -124,4 +124,21 @@ typedef enum
  */
 void cameraProcessKeyboard(camera_t *camera, camera_movement_t direction, float deltaTime);
 
+/*
+ * Updates yaw/pitch from raw mouse movement, then refreshes the
+ * cached front/right/up vectors accordingly (no separate
+ * cameraUpdateVectors() call needed - this does it internally, since
+ * forgetting it here would be an easy and confusing mistake).
+ *
+ * camera: non-NULL camera to reorient.
+ * xOffset: raw pixel delta in X since the last call (current cursor X
+ *          minus previous cursor X). Positive = mouse moved right.
+ * yOffset: raw pixel delta in Y since the last call, ALREADY FLIPPED
+ *          so that positive = "look up" (screen Y coordinates grow
+ *          downward, so this should be previous cursor Y minus
+ *          current cursor Y - i.e. the caller flips the sign before
+ *          passing it in here, not this function).
+ */
+void cameraProcessMouseMovement(camera_t *camera, float xOffset, float yOffset);
+
 #endif /* GRAPHICS_CAMERA_H_ */

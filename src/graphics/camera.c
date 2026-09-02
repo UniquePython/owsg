@@ -112,3 +112,22 @@ void cameraProcessKeyboard(camera_t *camera, camera_movement_t direction, float 
         break;
     }
 }
+
+void cameraProcessMouseMovement(camera_t *camera, float xOffset, float yOffset)
+{
+    xOffset *= camera->lookSensitivity;
+    yOffset *= camera->lookSensitivity;
+
+    camera->yaw += xOffset;
+    camera->pitch += yOffset;
+
+    /* Prevent the camera from reaching +/-90 degrees. */
+    if (camera->pitch > 89.0f)
+        camera->pitch = 89.0f;
+
+    if (camera->pitch < -89.0f)
+        camera->pitch = -89.0f;
+
+    /* Refresh front/right/up after changing orientation. */
+    cameraUpdateVectors(camera);
+}
