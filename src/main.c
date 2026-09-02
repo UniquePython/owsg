@@ -326,6 +326,20 @@ int main(void)
     info("Loaded vertex shader: '%s' successfully!", vertShader);
     info("Loaded fragment shader: '%s' successfully!", fragShader);
 
+    static vec3 instanceOffsets[10 * 10];
+
+    for (int x = 0; x < 10; x++)
+    {
+        for (int z = 0; z < 10; z++)
+        {
+            int index = x * 10 + z;
+
+            instanceOffsets[index][0] = (float)(x - 5);
+            instanceOffsets[index][1] = 0.0f;
+            instanceOffsets[index][2] = (float)(z - 5);
+        }
+    }
+
     /* --- Set up VAO + VBO + EBO --- */
     unsigned int vao, vbo, ebo;
     glGenVertexArrays(1, &vao);
@@ -333,17 +347,34 @@ int main(void)
 
     glGenBuffers(1, &vbo);
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
+
     glBufferData(GL_ARRAY_BUFFER, sizeof(cubeVertices), cubeVertices, GL_STATIC_DRAW);
 
-    glGenBuffers(1, &ebo);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(cubeIndices), cubeIndices, GL_STATIC_DRAW);
+    /* --- Instance offset VBO --- */
+    unsigned int instanceVbo;
+    glGenBuffers(1, &instanceVbo);
+    glBindBuffer(GL_ARRAY_BUFFER, instanceVbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(instanceOffsets), instanceOffsets, GL_STATIC_DRAW);
 
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), NULL);
+    /* location 2: per-instance vec3 offset */
+    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void *)0);
+    glEnableVertexAttribArray(2);
+
+    /* Advance the attribute once per instance, not once per vertex. */
+    glVertexAttribDivisor(2, 1);
+
+    /* --- Back to cube VBO --- */
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void *)0);
     glEnableVertexAttribArray(0);
 
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void *)(3 * sizeof(float)));
     glEnableVertexAttribArray(1);
+
+    glGenBuffers(1, &ebo);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(cubeIndices), cubeIndices, GL_STATIC_DRAW);
 
     /* --- Enable depth testing --- */
     glEnable(GL_DEPTH_TEST);
@@ -398,7 +429,7 @@ int main(void)
         shaderSetMat4(&shader, "projection", (const float *)projection);
 
         glBindVertexArray(vao);
-        glDrawElements(GL_TRIANGLES, sizeof(cubeIndices) / sizeof(cubeIndices[0]), GL_UNSIGNED_INT, NULL);
+        glDrawElementsInstanced(GL_TRIANGLES, sizeof(cubeIndices) / sizeof(cubeIndices[0]), GL_UNSIGNED_INT, NULL, 10 * 10);
 
         glfwSwapBuffers(window);
         glfwPollEvents();
@@ -407,6 +438,7 @@ int main(void)
     info("Exiting...");
     glDeleteVertexArrays(1, &vao);
     glDeleteBuffers(1, &vbo);
+    glDeleteBuffers(1, &instanceVbo);
     glDeleteBuffers(1, &ebo);
     shaderDestroy(&shader);
     glfwDestroyWindow(window);
