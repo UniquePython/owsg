@@ -247,3 +247,13 @@ void shaderDestroy(shader_t *shader)
     glDeleteProgram(shader->id);
     shader->id = 0;
 }
+
+void shaderSetMat4(const shader_t *shader, const char *name, const float *value)
+{
+    if (shader == NULL || name == NULL || value == NULL)
+        return;
+
+    glUseProgram(shader->id);
+    int location = glGetUniformLocation(shader->id, name);
+    glUniformMatrix4fv(location, 1, GL_FALSE, value);
+}

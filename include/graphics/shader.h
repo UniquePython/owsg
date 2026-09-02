@@ -56,4 +56,28 @@ void shaderUse(const shader_t *shader);
  */
 void shaderDestroy(shader_t *shader);
 
+/*
+ * Sets a mat4 uniform on this shader by name.
+ *
+ * shader: non-NULL shader previously created by shaderCreate(). Does
+ *         NOT need to be the currently active shader - this function
+ *         binds it internally, so it's safe to call regardless of
+ *         what shaderUse() was last called with. (Note: this does
+ *         mean it changes the currently bound program as a side
+ *         effect - if you call this between shaderUse() and a draw
+ *         call for a DIFFERENT shader, you'll need to shaderUse() the
+ *         one you actually want to draw with again afterward.)
+ *
+ * name: null-terminated uniform name as declared in the GLSL source
+ *       (e.g. "model", "view", "projection"). If no uniform with this
+ *       name exists in the program - e.g. a typo, or it was optimized
+ *       out by the driver for being unused - this call is silently a
+ *       no-op, per normal OpenGL behavior.
+ *
+ * value: pointer to a 4x4 float matrix in column-major order (cglm's
+ *        mat4 layout matches this directly, so a cglm mat4 can be
+ *        passed as-is).
+ */
+void shaderSetMat4(const shader_t *shader, const char *name, const float *value);
+
 #endif /* GRAPHICS_SHADER_H_ */

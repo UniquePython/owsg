@@ -13,6 +13,8 @@
  * own definitions. */
 #include <GLFW/glfw3.h>
 
+#include <cglm/cglm.h>
+
 #define WINDOW_WIDTH 1280
 #define WINDOW_HEIGHT 720
 #define WINDOW_TITLE "owsg"
@@ -294,6 +296,28 @@ int main(void)
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void *)(3 * sizeof(float)));
     glEnableVertexAttribArray(1);
 
+    /* Model matrix: local -> world space. */
+    mat4 model;
+    glm_mat4_identity(model);
+
+    /* View matrix: world -> camera-relative space. */
+    mat4 view;
+    vec3 eye = {0.0f, 0.0f, 3.0f};
+    vec3 center = {0.0f, 0.0f, 0.0f};
+    vec3 up = {0.0f, 1.0f, 0.0f};
+
+    glm_lookat(eye, center, up, view);
+
+    /* Projection matrix: camera-relative -> clip space. */
+    mat4 projection;
+
+    glm_perspective(
+        glm_rad(45.0f),                             // field of view
+        (float)WINDOW_WIDTH / (float)WINDOW_HEIGHT, // aspect ratio
+        0.1f,                                       // near clipping plane
+        100.0f,                                     // far clipping plane
+        projection);
+
     /* --- The render loop --- */
     while (!glfwWindowShouldClose(window))
     {
@@ -303,6 +327,10 @@ int main(void)
         glClear(GL_COLOR_BUFFER_BIT);
 
         shaderUse(&shader);
+        shaderSetMat4(&shader, "model", (const float *)model);
+        shaderSetMat4(&shader, "view", (const float *)view);
+        shaderSetMat4(&shader, "projection", (const float *)projection);
+
         glBindVertexArray(vao);
         glDrawElements(GL_TRIANGLES, sizeof(cubeIndices) / sizeof(cubeIndices[0]), GL_UNSIGNED_INT, NULL);
 
