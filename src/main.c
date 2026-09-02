@@ -1,5 +1,6 @@
 #include "util/owsg_err.h"
 #include "graphics/shader.h"
+#include "graphics/camera.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -304,31 +305,43 @@ int main(void)
     mat4 model;
     glm_mat4_identity(model);
 
-    /* View matrix: world -> camera-relative space. */
-    mat4 view;
-    vec3 eye = {2.0f, 2.0f, 3.0f};
-    vec3 center = {0.0f, 0.0f, 0.0f};
-    vec3 up = {0.0f, 1.0f, 0.0f};
+    camera_t camera;
+    cameraInit(&camera, (vec3){0.0f, 0.0f, 3.0f});
 
-    glm_lookat(eye, center, up, view);
-
-    /* Projection matrix: camera-relative -> clip space. */
-    mat4 projection;
-
-    glm_perspective(
-        glm_rad(45.0f),                             // field of view
-        (float)WINDOW_WIDTH / (float)WINDOW_HEIGHT, // aspect ratio
-        0.1f,                                       // near clipping plane
-        100.0f,                                     // far clipping plane
-        projection);
+    float deltaTime = 0.0f;
+    float lastFrame = 0.0f;
 
     /* --- The render loop --- */
     while (!glfwWindowShouldClose(window))
     {
-        /* TODO: process input here later */
+        float currentFrame = (float)glfwGetTime();
+        deltaTime = currentFrame - lastFrame;
+        lastFrame = currentFrame;
+
+        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+            cameraProcessKeyboard(&camera, CAMERA_MOVE_FORWARD, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+            cameraProcessKeyboard(&camera, CAMERA_MOVE_BACKWARD, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+            cameraProcessKeyboard(&camera, CAMERA_MOVE_LEFT, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+            cameraProcessKeyboard(&camera, CAMERA_MOVE_RIGHT, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS)
+            cameraProcessKeyboard(&camera, CAMERA_MOVE_UP, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
+            cameraProcessKeyboard(&camera, CAMERA_MOVE_DOWN, deltaTime);
+
+        int width, height;
+        glfwGetFramebufferSize(window, &width, &height);
 
         glClearColor(0.0f, 0.0f, 0.0f, 1.0f); // Black
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+        mat4 view;
+        cameraGetViewMatrix(&camera, view);
+
+        mat4 projection;
+        cameraGetProjectionMatrix(&camera, (float)width / (float)height, 0.1f, 100.0f, projection);
 
         shaderUse(&shader);
         shaderSetMat4(&shader, "model", (const float *)model);

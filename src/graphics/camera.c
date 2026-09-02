@@ -77,3 +77,38 @@ void cameraGetProjectionMatrix(const camera_t *camera, float aspect, float nearZ
 
     glm_perspective(glm_rad(camera->fov), aspect, nearZ, farZ, dest);
 }
+
+void cameraProcessKeyboard(camera_t *camera, camera_movement_t direction, float deltaTime)
+{
+    if (camera == NULL)
+        return;
+
+    float velocity = camera->moveSpeed * deltaTime;
+
+    switch (direction)
+    {
+    case CAMERA_MOVE_FORWARD:
+        glm_vec3_muladds(camera->front, velocity, camera->position);
+        break;
+
+    case CAMERA_MOVE_BACKWARD:
+        glm_vec3_muladds(camera->front, -velocity, camera->position);
+        break;
+
+    case CAMERA_MOVE_LEFT:
+        glm_vec3_muladds(camera->right, -velocity, camera->position);
+        break;
+
+    case CAMERA_MOVE_RIGHT:
+        glm_vec3_muladds(camera->right, velocity, camera->position);
+        break;
+
+    case CAMERA_MOVE_UP:
+        glm_vec3_muladds(camera->worldUp, velocity, camera->position);
+        break;
+
+    case CAMERA_MOVE_DOWN:
+        glm_vec3_muladds(camera->worldUp, -velocity, camera->position);
+        break;
+    }
+}

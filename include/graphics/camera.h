@@ -91,4 +91,37 @@ void cameraGetViewMatrix(camera_t *camera, mat4 dest);
  */
 void cameraGetProjectionMatrix(const camera_t *camera, float aspect, float nearZ, float farZ, mat4 dest);
 
+/*
+ * Movement directions for cameraProcessKeyboard(), relative to the
+ * camera's current orientation (not world axes) - e.g. FORWARD always
+ * means "the way the camera is currently looking", regardless of yaw.
+ */
+typedef enum
+{
+    CAMERA_MOVE_FORWARD,
+    CAMERA_MOVE_BACKWARD,
+    CAMERA_MOVE_LEFT,
+    CAMERA_MOVE_RIGHT,
+    CAMERA_MOVE_UP,   /* according to worldUp */
+    CAMERA_MOVE_DOWN, /* according to worldUp */
+
+} camera_movement_t;
+
+/*
+ * Moves the camera one direction at a speed/distance appropriate for
+ * one frame.
+ *
+ * camera: non-NULL camera to move. camera->position is updated in
+ *         place; front/right/up are unaffected (movement doesn't
+ *         change orientation) so no cameraUpdateVectors() call is
+ *         needed after this.
+ * direction: which way to move, relative to the camera's current
+ *            orientation.
+ * deltaTime: seconds elapsed since the last frame. Movement distance
+ *            is camera->moveSpeed * deltaTime, making moveSpeed a
+ *            true "world units per second" value independent of
+ *            framerate.
+ */
+void cameraProcessKeyboard(camera_t *camera, camera_movement_t direction, float deltaTime);
+
 #endif /* GRAPHICS_CAMERA_H_ */
