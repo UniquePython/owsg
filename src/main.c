@@ -296,13 +296,17 @@ int main(void)
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void *)(3 * sizeof(float)));
     glEnableVertexAttribArray(1);
 
+    /* --- Enable depth testing --- */
+    glEnable(GL_DEPTH_TEST);
+    info("Depth testing: enabled");
+
     /* Model matrix: local -> world space. */
     mat4 model;
     glm_mat4_identity(model);
 
     /* View matrix: world -> camera-relative space. */
     mat4 view;
-    vec3 eye = {0.0f, 0.0f, 3.0f};
+    vec3 eye = {2.0f, 2.0f, 3.0f};
     vec3 center = {0.0f, 0.0f, 0.0f};
     vec3 up = {0.0f, 1.0f, 0.0f};
 
@@ -324,7 +328,7 @@ int main(void)
         /* TODO: process input here later */
 
         glClearColor(0.0f, 0.0f, 0.0f, 1.0f); // Black
-        glClear(GL_COLOR_BUFFER_BIT);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         shaderUse(&shader);
         shaderSetMat4(&shader, "model", (const float *)model);
