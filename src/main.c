@@ -1,6 +1,7 @@
 #include "util/owsg_err.h"
 #include "graphics/shader.h"
 #include "graphics/camera.h"
+#include "world/chunk.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -326,19 +327,56 @@ int main(void)
     info("Loaded vertex shader: '%s' successfully!", vertShader);
     info("Loaded fragment shader: '%s' successfully!", fragShader);
 
-    static vec3 instanceOffsets[10 * 10];
+    chunk_t chunk = {0}; /* zero-initialized => all-air */
+    err = (owsg_err){0};
 
-    for (int x = 0; x < 10; x++)
+    for (int x = 0; x < CHUNK_SIZE_X; x++)
     {
-        for (int z = 0; z < 10; z++)
+        for (int z = 0; z < CHUNK_SIZE_Z; z++)
         {
-            int index = x * 10 + z;
+            if (!chunkSetBlock(&chunk, x, 0, z, BLOCK_STONE, &err))
+            {
+                error("Failed to set block: " ERR_FMT, ERR_ARG(err));
 
-            instanceOffsets[index][0] = (float)(x - 5);
-            instanceOffsets[index][1] = 0.0f;
-            instanceOffsets[index][2] = (float)(z - 5);
+                glfwDestroyWindow(window);
+                glfwTerminate();
+                return EXIT_FAILURE;
+            }
         }
     }
+
+    static vec3 instanceOffsets[CHUNK_BLOCK_COUNT];
+    int instanceCount = 0;
+
+    for (int x = 0; x < CHUNK_SIZE_X; x++)
+    {
+        for (int y = 0; y < CHUNK_SIZE_Y; y++)
+        {
+            for (int z = 0; z < CHUNK_SIZE_Z; z++)
+            {
+                blockId_t block;
+
+                if (!chunkGetBlock(&chunk, x, y, z, &block, &err))
+                {
+                    error("Failed to get block: " ERR_FMT, x, y, z, ERR_ARG(err));
+                    glfwDestroyWindow(window);
+                    glfwTerminate();
+                    return EXIT_FAILURE;
+                }
+
+                if (!blockIsSolid(block))
+                    continue;
+
+                instanceOffsets[instanceCount][0] = (float)x;
+                instanceOffsets[instanceCount][1] = (float)y;
+                instanceOffsets[instanceCount][2] = (float)z;
+
+                instanceCount++;
+            }
+        }
+    }
+
+    info("Solid blocks: %d", instanceCount);
 
     /* --- Set up VAO + VBO + EBO --- */
     unsigned int vao, vbo, ebo;
@@ -354,7 +392,7 @@ int main(void)
     unsigned int instanceVbo;
     glGenBuffers(1, &instanceVbo);
     glBindBuffer(GL_ARRAY_BUFFER, instanceVbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(instanceOffsets), instanceOffsets, GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, (size_t)instanceCount * sizeof(vec3), instanceOffsets, GL_STATIC_DRAW);
 
     /* location 2: per-instance vec3 offset */
     glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void *)0);
@@ -429,7 +467,11 @@ int main(void)
         shaderSetMat4(&shader, "projection", (const float *)projection);
 
         glBindVertexArray(vao);
-        glDrawElementsInstanced(GL_TRIANGLES, sizeof(cubeIndices) / sizeof(cubeIndices[0]), GL_UNSIGNED_INT, NULL, 10 * 10);
+        glDrawElementsInstanced(GL_TRIANGLES,
+                                sizeof(cubeIndices) / sizeof(cubeIndices[0]),
+                                GL_UNSIGNED_INT,
+                                NULL,
+                                instanceCount);
 
         glfwSwapBuffers(window);
         glfwPollEvents();
