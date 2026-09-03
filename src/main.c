@@ -299,7 +299,7 @@ int main(void)
         int width, height;
         windowGetFramebufferSize(&window, &width, &height);
 
-        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+        glClearColor(135.0f / 255.0f, 206.0f / 255.0f, 235.0f / 255.0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         mat4 view;
@@ -310,12 +310,15 @@ int main(void)
             &camera,
             (float)width / (float)height,
             0.1f,
-            100.0f,
+            25000.0f,
             projection);
+
+        vec3 fogColor = {135.0f / 255.0f, 206.0f / 255.0f, 235.0f / 255.0f};
 
         shaderUse(&shader);
         shaderSetMat4(&shader, "view", (const float *)view);
         shaderSetMat4(&shader, "projection", (const float *)projection);
+        shaderSetVec3(&shader, "fogColor", fogColor);
 
         for (int i = 0; i < GRID_CHUNK_COUNT; ++i)
         {

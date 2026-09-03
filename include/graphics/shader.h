@@ -80,4 +80,22 @@ void shaderDestroy(shader_t *shader);
  */
 void shaderSetMat4(const shader_t *shader, const char *name, const float *value);
 
+/*
+ * Sets a vec3 uniform on this shader by name.
+ *
+ * shader: non-NULL shader previously created by shaderCreate(). Does
+ *         NOT need to be the currently active shader - see the
+ *         shaderSetMat4() doc comment for the same binding-as-a-side-
+ *         effect note, which applies identically here.
+ *
+ * name: null-terminated uniform name as declared in the GLSL source
+ *       (e.g. "fogColor"). If no uniform with this name exists in the
+ *       program, this call is silently a no-op, per normal OpenGL
+ *       behavior.
+ *
+ * value: a 3-component float vector (cglm's vec3 layout matches
+ *        directly, so a cglm vec3 can be passed as-is).
+ */
+void shaderSetVec3(const shader_t *shader, const char *name, const float *value);
+
 #endif /* GRAPHICS_SHADER_H_ */

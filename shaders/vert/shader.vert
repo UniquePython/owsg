@@ -6,6 +6,7 @@ layout (location = 2) in vec3 aNormal;
 
 out vec3 vColor;
 out vec3 vNormal;
+out vec3 vViewPos;
 
 uniform mat4 model;
 uniform mat4 view;
@@ -27,4 +28,6 @@ void main()
     vNormal = mat3(model) * aNormal;
 
     vColor = aColor;
+
+    vViewPos = (view * model * vec4(aPos, 1.0)).xyz;
 }

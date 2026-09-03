@@ -2,6 +2,9 @@
 
 in vec3 vColor;
 in vec3 vNormal;
+in vec3 vViewPos;
+
+uniform vec3 fogColor;
 
 out vec4 FragColor;
 
@@ -13,6 +16,7 @@ out vec4 FragColor;
  */
 const vec3 LIGHT_DIRECTION = normalize(vec3(-0.4, -1.0, -0.3));
 const float AMBIENT_STRENGTH = 0.35;
+const float FOG_DENSITY = 0.000136;
 
 void main()
 {
@@ -32,5 +36,12 @@ void main()
      */
     float lightAmount = AMBIENT_STRENGTH + (1.0 - AMBIENT_STRENGTH) * diffuseStrength;
 
-    FragColor = vec4(vColor * lightAmount, 1.0);
+    vec3 litColor = vColor * lightAmount;
+
+    float dist = length(vViewPos);
+    float fogFactor = clamp(1.0 - exp(-dist * FOG_DENSITY), 0.0, 1.0);
+
+    vec3 finalColor = mix(litColor, fogColor, fogFactor);
+
+    FragColor = vec4(finalColor, 1.0);
 }
