@@ -279,8 +279,18 @@ bool meshGenerateFromChunk(const world_t *world, chunkCoord_t chunkCoord, const 
     /*
      * --- Allocate exactly enough memory for pass 2 ---
      */
+    /*
+     * 9 floats per vertex: position (3) + color (3) + normal (3). The
+     * normal is constant across all 4 vertices of a given face (cube
+     * faces are flat), but is still stored per-vertex rather than
+     * per-face/uniform, since that's what lets a single shared vertex
+     * shader attribute layout work for arbitrary (eventually
+     * non-cube) mesh data later - flat shading via a per-vertex
+     * attribute costs a few duplicated floats now in exchange for not
+     * having to special-case cube faces in the shader.
+     */
     float *vertices;
-    if (!owsgAlloc((size_t)vertexCount * 6 * sizeof(float), &vertices))
+    if (!owsgAlloc((size_t)vertexCount * 9 * sizeof(float), &vertices))
     {
         owsgErrSet(err, "Failed to allocate %u vertices", vertexCount);
         return false;
@@ -341,11 +351,22 @@ bool meshGenerateFromChunk(const world_t *world, chunkCoord_t chunkCoord, const 
                      */
                     unsigned int baseVertex = vertexWriteCount;
 
+                    /*
+                     * Every vertex of this face shares the same
+                     * outward-facing normal - neighborOffset is
+                     * already a unit vector in that direction, so no
+                     * separate normal table is needed.
+                     */
+                    float normal[3] = {
+                        (float)FACE_DIRECTIONS[dir].neighborOffset[0],
+                        (float)FACE_DIRECTIONS[dir].neighborOffset[1],
+                        (float)FACE_DIRECTIONS[dir].neighborOffset[2]};
+
                     for (int corner = 0; corner < 4; ++corner)
                     {
                         const float *offset = FACE_DIRECTIONS[dir].corners[corner];
 
-                        size_t vertexOffset = (size_t)vertexWriteCount * 6;
+                        size_t vertexOffset = (size_t)vertexWriteCount * 9;
 
                         vertices[vertexOffset + 0] = (float)x + offset[0];
                         vertices[vertexOffset + 1] = (float)y + offset[1];
@@ -354,6 +375,10 @@ bool meshGenerateFromChunk(const world_t *world, chunkCoord_t chunkCoord, const 
                         vertices[vertexOffset + 3] = color[0];
                         vertices[vertexOffset + 4] = color[1];
                         vertices[vertexOffset + 5] = color[2];
+
+                        vertices[vertexOffset + 6] = normal[0];
+                        vertices[vertexOffset + 7] = normal[1];
+                        vertices[vertexOffset + 8] = normal[2];
 
                         ++vertexWriteCount;
                     }
@@ -400,13 +425,16 @@ bool meshGenerateFromChunk(const world_t *world, chunkCoord_t chunkCoord, const 
 
     glGenBuffers(1, &vbo);
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(GL_ARRAY_BUFFER, ((size_t)vertexCount * 6 * sizeof(float)), vertices, GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, ((size_t)vertexCount * 9 * sizeof(float)), vertices, GL_STATIC_DRAW);
 
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), NULL);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 9 * sizeof(float), NULL);
     glEnableVertexAttribArray(0);
 
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void *)(3 * sizeof(float)));
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 9 * sizeof(float), (void *)(3 * sizeof(float)));
     glEnableVertexAttribArray(1);
+
+    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 9 * sizeof(float), (void *)(6 * sizeof(float)));
+    glEnableVertexAttribArray(2);
 
     glGenBuffers(1, &ebo);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
