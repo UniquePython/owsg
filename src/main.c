@@ -1,15 +1,18 @@
 #include "util/owsg_err.h"
 #include "util/log.h"
+#include "util/alloc.h"
 #include "graphics/window.h"
 #include "graphics/shader.h"
 #include "graphics/camera.h"
 #include "graphics/mesh.h"
 #include "world/chunk.h"
+#include "world/world.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
 #include <unistd.h>
+#include <string.h>
 
 #include <glad/gl.h>
 #include <cglm/cglm.h>
@@ -17,6 +20,45 @@
 #define WINDOW_WIDTH 1280
 #define WINDOW_HEIGHT 720
 #define WINDOW_TITLE "owsg"
+
+#define TEST_CHUNK_COUNT 2
+
+/*
+ * Pairs a chunk's grid coordinate with the GPU mesh generated from it,
+ * so the render loop knows what model-matrix translation to apply to
+ * each mesh (mesh vertices are in that chunk's own LOCAL [0,16)
+ * space - see mesh.c - so placing them in the world is a per-chunk
+ * translation applied at draw time, not baked into the vertex data).
+ *
+ * Deliberately local to main.c, not part of world_t - world_t owns
+ * block data only; pairing chunks with render state is a separate
+ * concern we're intentionally not solving generally yet.
+ */
+typedef struct
+{
+    chunkCoord_t coord;
+    mesh_t mesh;
+} renderChunk_t;
+
+/*
+ * outChunk: non-NULL, already zero-initialized by the caller (see
+ *           chunk_t's zero-init convention in chunk.h) - this
+ *           function only needs to set the blocks that should be
+ *           non-air.
+ * err: non-NULL, populated on failure.
+ *
+ * Returns true on success, false on failure (propagated from
+ * chunkSetBlock()).
+ */
+static bool fillTestChunk(chunk_t *outChunk, owsg_err *err)
+{
+    for (int x = 0; x < CHUNK_SIZE_X; ++x)
+        for (int z = 0; z < CHUNK_SIZE_Z; ++z)
+            if (!chunkSetBlock(outChunk, x, 0, z, BLOCK_STONE, err))
+                return false;
+
+    return true;
+}
 
 int main(void)
 {
@@ -47,37 +89,90 @@ int main(void)
     logInfo("Loaded vertex shader: '%s' successfully!", vertShader);
     logInfo("Loaded fragment shader: '%s' successfully!", fragShader);
 
-    chunk_t chunk = {0}; /* zero-initialized => all-air */
-    err = (owsg_err){0};
+    /* --- set up the world and its test chunks --- */
+    world_t world;
+    worldInit(&world);
 
-    for (int x = 0; x < CHUNK_SIZE_X; x++)
+    chunkCoord_t testCoords[TEST_CHUNK_COUNT] = {
+        {.x = 0, .y = 0, .z = 0},
+        {.x = 1, .y = 0, .z = 0},
+    };
+
+    renderChunk_t renderChunks[TEST_CHUNK_COUNT];
+
+    for (int i = 0; i < TEST_CHUNK_COUNT; ++i)
     {
-        for (int z = 0; z < CHUNK_SIZE_Z; z++)
+        renderChunks[i].coord = testCoords[i];
+
+        chunk_t *chunk = NULL;
+
+        if (!owsgAlloc(sizeof(*chunk), (void **)&chunk))
         {
-            if (!chunkSetBlock(&chunk, x, 0, z, BLOCK_STONE, &err))
-            {
-                logError("Failed to set block: " ERR_FMT, ERR_ARG(err));
-                shaderDestroy(&shader);
-                windowDestroy(&window);
-                return EXIT_FAILURE;
-            }
+            logError("Chunk allocation failed");
+
+            worldDestroy(&world);
+            shaderDestroy(&shader);
+            windowDestroy(&window);
+            return EXIT_FAILURE;
+        }
+
+        memset(chunk, 0, sizeof(*chunk));
+
+        if (!fillTestChunk(chunk, &err))
+        {
+            logError("Chunk initialization failed: " ERR_FMT, ERR_ARG(err));
+
+            owsgFree((void **)&chunk);
+            worldDestroy(&world);
+            shaderDestroy(&shader);
+            windowDestroy(&window);
+            return EXIT_FAILURE;
+        }
+
+        if (!worldSetChunk(&world, testCoords[i], chunk, &err))
+        {
+            logError("Adding chunk to world failed: " ERR_FMT, ERR_ARG(err));
+
+            owsgFree((void **)&chunk);
+            worldDestroy(&world);
+            shaderDestroy(&shader);
+            windowDestroy(&window);
+            return EXIT_FAILURE;
         }
     }
 
-    mesh_t mesh;
-    if (!meshGenerateFromChunk(&chunk, &mesh, &err))
+    for (int i = 0; i < TEST_CHUNK_COUNT; ++i)
     {
-        logError("Mesh generation failed: " ERR_FMT, ERR_ARG(err));
-        shaderDestroy(&shader);
-        windowDestroy(&window);
-        return EXIT_FAILURE;
+        chunk_t *chunk = NULL;
+
+        if (!worldGetChunk(&world, renderChunks[i].coord, &chunk, &err))
+        {
+            logError("Chunk lookup failed: " ERR_FMT, ERR_ARG(err));
+
+            for (int j = 0; j < i; ++j)
+                meshDestroy(&renderChunks[j].mesh);
+
+            worldDestroy(&world);
+            shaderDestroy(&shader);
+            windowDestroy(&window);
+            return EXIT_FAILURE;
+        }
+
+        if (!meshGenerateFromChunk(&world, renderChunks[i].coord, chunk, &renderChunks[i].mesh, &err))
+        {
+            logError("Chunk mesh generation failed: " ERR_FMT, ERR_ARG(err));
+
+            for (int j = 0; j < i; ++j)
+                meshDestroy(&renderChunks[j].mesh);
+
+            worldDestroy(&world);
+            shaderDestroy(&shader);
+            windowDestroy(&window);
+            return EXIT_FAILURE;
+        }
     }
-    logInfo("Mesh generated: %u indices", mesh.indexCount);
 
-    /* Model matrix: local -> world space. */
-    mat4 model;
-    glm_mat4_identity(model);
-
+    /* --- camera --- */
     camera_t camera;
     cameraInit(&camera, (vec3){0.0f, 0.0f, 3.0f});
     windowSetCamera(&window, &camera);
@@ -107,17 +202,34 @@ int main(void)
         cameraGetProjectionMatrix(&camera, (float)width / (float)height, 0.1f, 100.0f, projection);
 
         shaderUse(&shader);
-        shaderSetMat4(&shader, "model", (const float *)model);
         shaderSetMat4(&shader, "view", (const float *)view);
         shaderSetMat4(&shader, "projection", (const float *)projection);
 
-        meshDraw(&mesh);
+        for (int i = 0; i < TEST_CHUNK_COUNT; ++i)
+        {
+            mat4 model;
+            glm_mat4_identity(model);
+
+            glm_translate(
+                model,
+                (vec3){
+                    (float)(renderChunks[i].coord.x * CHUNK_SIZE_X),
+                    (float)(renderChunks[i].coord.y * CHUNK_SIZE_Y),
+                    (float)(renderChunks[i].coord.z * CHUNK_SIZE_Z)});
+
+            shaderSetMat4(&shader, "model", (const float *)model);
+            meshDraw(&renderChunks[i].mesh);
+        }
 
         windowUpdate(&window);
     }
 
     logInfo("Exiting...");
-    meshDestroy(&mesh);
+
+    for (int i = 0; i < TEST_CHUNK_COUNT; ++i)
+        meshDestroy(&renderChunks[i].mesh);
+
+    worldDestroy(&world); /* frees every chunk_t the world owns */
     shaderDestroy(&shader);
     windowDestroy(&window);
     return EXIT_SUCCESS;
