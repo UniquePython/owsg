@@ -2,6 +2,7 @@
 #define GRAPHICS_MESH_H_
 
 #include "world/chunk.h"
+#include "world/world.h"
 #include "util/owsg_err.h"
 
 #include <stdbool.h>
@@ -32,16 +33,23 @@ typedef struct
 
 /*
  * Generates a GPU mesh from a chunk's block data, using face culling:
- * only faces between a solid block and a non-solid neighbor (air, or
- * out-of-chunk-bounds - see note below) are included. Faces between
- * two solid blocks are omitted entirely, since they can never be
- * seen.
+ * only faces between a solid block and a non-solid neighbor are
+ * included. Faces between two solid blocks are omitted entirely,
+ * since they can never be seen.
  *
- * SIMPLIFICATION: a block at the chunk's edge has neighbors that fall
- * outside this chunk. Since only a single chunk exists right now,
- * out-of-bounds neighbors are treated as air, so boundary faces are
- * always emitted. Once multiple chunks exist (a future milestone),
- * this will need to consult neighboring chunks instead - not handled here.
+ * A neighbor may fall outside `chunk`'s own bounds - in that case it
+ * belongs to a DIFFERENT chunk, resolved via `world`:
+ *   - if the neighboring chunk is loaded, its actual block is used,
+ *     same as an in-bounds neighbor would be.
+ *   - if the neighboring chunk is NOT loaded (worldGetBlock() reports
+ *     BLOCK_LOOKUP_CHUNK_UNLOADED), the neighbor is treated as SOLID
+ *     (the face is NOT emitted). This is a deliberate, conservative
+ *     policy: it avoids ever drawing a face that might turn out to be
+ *     hidden once that neighbor chunk loads, at the cost of
+ *     under-drawing (a temporary missing face) at the frontier of
+ *     loaded terrain until neighbors are loaded and this chunk is
+ *     remeshed. TODO: remeshing-on-neighbor-load doesn't exist yet -
+ *     future milestone.
  *
  * Uses a two-pass approach: pass 1 counts exactly how many faces will
  * be emitted (by running the same culling logic with no output),
@@ -50,21 +58,35 @@ typedef struct
  * CPU work (the culling check runs twice per block) for zero wasted
  * memory in the final buffers.
  *
- * chunk: non-NULL chunk to generate a mesh from.
+ * world: non-NULL world that `chunk` belongs to - used to resolve
+ *        neighbor lookups that cross `chunk`'s boundary into
+ *        adjacent chunks.
+ * chunkCoord: `chunk`'s position on the chunk grid. Needed to convert
+ *             a local out-of-bounds neighbor coordinate (see
+ *             shouldEmitFace() in mesh.c) into the world-space
+ *             coordinate worldGetBlock() expects.
+ * chunk: non-NULL chunk to generate a mesh from. This should be the
+ *        same chunk stored in `world` at `chunkCoord` - it is taken
+ *        as an explicit parameter (rather than re-fetched from
+ *        `world` internally) so callers that already hold the
+ *        pointer don't pay for a redundant hashmap lookup.
  * outMesh: non-NULL mesh_t to populate on success. Left unchanged on
  *          failure.
  * err: non-NULL error object to populate on failure - this can
  *      surface either an allocation failure, or a propagated failure
- *      from the internal per-block neighbor lookup (see chunk.h's
- *      chunkGetBlock() - shouldn't happen given correct traversal
- *      bounds, but is not silently ignored if it somehow does).
+ *      from the internal per-block neighbor lookup (either
+ *      chunkGetBlock() for in-bounds neighbors, or worldGetBlock()
+ *      for cross-chunk neighbors - shouldn't happen given correct
+ *      traversal bounds and a correctly-constructed chunkCoord, but
+ *      is not silently ignored if it somehow does).
  *
  * Returns true on success, false on failure.
  *
  * Ownership: on success, the caller is responsible for eventually
  * calling meshDestroy() on outMesh.
  */
-bool meshGenerateFromChunk(const chunk_t *chunk, mesh_t *outMesh, owsg_err *err);
+bool meshGenerateFromChunk(const world_t *world, chunkCoord_t chunkCoord, const chunk_t *chunk,
+                           mesh_t *outMesh, owsg_err *err);
 
 /*
  * Issues a single draw call for this mesh's complete geometry.

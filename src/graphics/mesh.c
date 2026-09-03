@@ -108,49 +108,112 @@ static void getBlockColor(blockId_t block, float outColor[3])
 }
 
 /*
- * Determines whether the face of the solid block at (x,y,z) in
- * direction FACE_DIRECTIONS[dir] should be emitted - true if the
- * neighbor in that direction is non-solid (air, or out of chunk
- * bounds - see the documented simplification in mesh.h).
+ * Determines whether the face of the solid block at local coordinate
+ * (x,y,z) WITHIN `chunk` in direction FACE_DIRECTIONS[dir] should be
+ * emitted.
  *
+ * If the neighbor position is still within `chunk`'s own bounds, this
+ * is resolved locally via chunkGetBlock() (same as before this
+ * function became world-aware). Otherwise the neighbor belongs to a
+ * DIFFERENT chunk - see world/mesh.h's meshGenerateFromChunk() doc
+ * comment for the exact policy applied when that neighboring chunk
+ * isn't loaded.
+ *
+ * world: non-NULL world `chunk` belongs to.
+ * chunkCoord: `chunk`'s position on the chunk grid - needed to
+ *             convert an out-of-bounds local neighbor coordinate into
+ *             a world-space coordinate.
  * chunk: non-NULL chunk being meshed.
- * x, y, z: local coordinates of the SOLID block whose face is being
- *          considered (not the neighbor).
+ * x, y, z: LOCAL coordinates (within `chunk`) of the SOLID block
+ *          whose face is being considered (not the neighbor).
  * dir: index into FACE_DIRECTIONS, selecting which face/direction to
  *      check.
  * outShouldEmit: non-NULL output pointer, set to the result on
  *                success.
  * err: non-NULL error object, populated on failure.
  *
- * Returns true on success (*outShouldEmit is valid), false on failure
- * (e.g. the underlying chunkGetBlock() call failed - shouldn't happen
- * given correct loop bounds).
+ * Returns true on success (*outShouldEmit is valid), false on
+ * failure.
  */
-static bool shouldEmitFace(const chunk_t *chunk, int x, int y, int z, int dir, bool *outShouldEmit, owsg_err *err)
+static bool shouldEmitFace(const world_t *world, chunkCoord_t chunkCoord, const chunk_t *chunk,
+                           int x, int y, int z, int dir, bool *outShouldEmit, owsg_err *err)
 {
     int nx = x + FACE_DIRECTIONS[dir].neighborOffset[0];
     int ny = y + FACE_DIRECTIONS[dir].neighborOffset[1];
     int nz = z + FACE_DIRECTIONS[dir].neighborOffset[2];
 
-    /* Out-of-chunk neighbor: treated as air (see documented
-     * simplification in mesh.h) - not an error, just means this face
-     * should be emitted. */
-    if (nx < 0 || nx >= CHUNK_SIZE_X || ny < 0 || ny >= CHUNK_SIZE_Y || nz < 0 || nz >= CHUNK_SIZE_Z)
+    /* Still-local neighbor: resolve directly against this chunk. */
+    if (nx >= 0 && nx < CHUNK_SIZE_X &&
+        ny >= 0 && ny < CHUNK_SIZE_Y &&
+        nz >= 0 && nz < CHUNK_SIZE_Z)
     {
-        *outShouldEmit = true;
+        blockId_t neighborBlock;
+
+        if (!chunkGetBlock(chunk, nx, ny, nz, &neighborBlock, err))
+            return false;
+
+        *outShouldEmit = !blockIsSolid(neighborBlock);
         return true;
     }
 
-    blockId_t neighborBlock;
-    if (!chunkGetBlock(chunk, nx, ny, nz, &neighborBlock, err))
-        return false; /* err already populated by chunkGetBlock */
+    /*
+     * The neighbor lies outside this chunk. Convert its local
+     * coordinate into a world-space block coordinate.
+     *
+     * For example, if chunkCoord.x == 2 and nx == -1:
+     *
+     *     worldX = 2 * CHUNK_SIZE_X + (-1)
+     *            = 32 - 1
+     *            = 31
+     *
+     * which is the final block of chunk x == 1.
+     */
+    int32_t worldX = chunkCoord.x * CHUNK_SIZE_X + nx;
+    int32_t worldY = chunkCoord.y * CHUNK_SIZE_Y + ny;
+    int32_t worldZ = chunkCoord.z * CHUNK_SIZE_Z + nz;
 
-    *outShouldEmit = !blockIsSolid(neighborBlock);
+    blockId_t neighborBlock;
+    blockLookupResult_t lookupResult;
+
+    if (!worldGetBlock(
+            world,
+            worldX,
+            worldY,
+            worldZ,
+            &neighborBlock,
+            &lookupResult,
+            err))
+    {
+        return false;
+    }
+
+    if (lookupResult == BLOCK_LOOKUP_OK)
+    {
+        /*
+         * Neighboring chunk is loaded, so use its actual block.
+         */
+        *outShouldEmit = !blockIsSolid(neighborBlock);
+        return true;
+    }
+
+    /*
+     * Neighboring chunk isn't loaded. Per the new meshing policy,
+     * treat it as solid so that we DON'T generate a boundary face
+     * that may later turn out to be hidden by a neighboring chunk.
+     */
+    *outShouldEmit = false;
     return true;
 }
 
-bool meshGenerateFromChunk(const chunk_t *chunk, mesh_t *outMesh, owsg_err *err)
+bool meshGenerateFromChunk(const world_t *world, chunkCoord_t chunkCoord, const chunk_t *chunk,
+                           mesh_t *outMesh, owsg_err *err)
 {
+    if (world == NULL)
+    {
+        owsgErrSet(err, "World is NULL");
+        return false;
+    }
+
     if (chunk == NULL)
     {
         owsgErrSet(err, "Chunk is NULL");
@@ -187,7 +250,7 @@ bool meshGenerateFromChunk(const chunk_t *chunk, mesh_t *outMesh, owsg_err *err)
                 {
                     bool shouldEmit;
 
-                    if (!shouldEmitFace(chunk, x, y, z, dir, &shouldEmit, err))
+                    if (!shouldEmitFace(world, chunkCoord, chunk, x, y, z, dir, &shouldEmit, err))
                         return false;
 
                     if (shouldEmit)
@@ -262,7 +325,7 @@ bool meshGenerateFromChunk(const chunk_t *chunk, mesh_t *outMesh, owsg_err *err)
                 {
                     bool shouldEmit;
 
-                    if (!shouldEmitFace(chunk, x, y, z, dir, &shouldEmit, err))
+                    if (!shouldEmitFace(world, chunkCoord, chunk, x, y, z, dir, &shouldEmit, err))
                     {
                         owsgFree(&vertices);
                         owsgFree(&indices);
