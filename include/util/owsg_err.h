@@ -35,4 +35,6 @@ void owsgErrFree(owsg_err *err);
 #define ERR_FMT "%.*s"
 #define ERR_ARG(err) (int)(err).len, (err).msg
 
+#define ERR_IS_NONEMPTY(err) ((err)->msg != NULL)
+
 #endif /* UTIL_OWSG_ERR_H_ */

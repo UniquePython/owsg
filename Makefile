@@ -77,7 +77,7 @@ WARN_FLAGS := \
 # Thirdparty code is vendored, not ours to fix - compile it quietly.
 THIRDPARTY_WARN_FLAGS := -w
 
-STD_FLAGS := -std=c11
+STD_FLAGS := -std=gnu11
 # -MMD: emit a .d dependency file per .o, next to it, listing the
 #       headers that .c file transitively includes (excluding system
 #       headers), so editing a header correctly triggers a rebuild of
