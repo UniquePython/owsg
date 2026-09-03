@@ -1,6 +1,7 @@
 #include "util/owsg_err.h"
 #include "graphics/shader.h"
 #include "graphics/camera.h"
+#include "graphics/mesh.h"
 #include "world/chunk.h"
 
 #include <stdio.h>
@@ -129,118 +130,6 @@ static void cursorPosCallback(GLFWwindow *window, double xpos, double ypos)
         cameraProcessMouseMovement(g_camera, xOffset, yOffset);
 }
 
-/*
- * Interleaved cube vertex data: position (x,y,z) followed by color
- * (r,g,b) per vertex, 6 floats each.
- *
- * 24 vertices = 4 per face * 6 faces. Vertices are NOT shared between
- * faces because each face has its own distinct color.
- *
- * Face colors:
- *   Front  = Red
- *   Back   = Green
- *   Right  = Blue
- *   Left   = Yellow
- *   Top    = Magenta
- *   Bottom = Cyan
- */
-
-static const float cubeVertices[] = {
-
-    // Front face (+Z) - Red
-    // vertex 0
-    -0.5f, -0.5f, 0.5f, 1.0f, 0.0f, 0.0f,
-    // vertex 1
-    0.5f, -0.5f, 0.5f, 1.0f, 0.0f, 0.0f,
-    // vertex 2
-    0.5f, 0.5f, 0.5f, 1.0f, 0.0f, 0.0f,
-    // vertex 3
-    -0.5f, 0.5f, 0.5f, 1.0f, 0.0f, 0.0f,
-
-    // Back face (-Z) - Green
-    // vertex 4
-    0.5f, -0.5f, -0.5f, 0.0f, 1.0f, 0.0f,
-    // vertex 5
-    -0.5f, -0.5f, -0.5f, 0.0f, 1.0f, 0.0f,
-    // vertex 6
-    -0.5f, 0.5f, -0.5f, 0.0f, 1.0f, 0.0f,
-    // vertex 7
-    0.5f, 0.5f, -0.5f, 0.0f, 1.0f, 0.0f,
-
-    // Right face (+X) - Blue
-    // vertex 8
-    0.5f, -0.5f, 0.5f, 0.0f, 0.0f, 1.0f,
-    // vertex 9
-    0.5f, -0.5f, -0.5f, 0.0f, 0.0f, 1.0f,
-    // vertex 10
-    0.5f, 0.5f, -0.5f, 0.0f, 0.0f, 1.0f,
-    // vertex 11
-    0.5f, 0.5f, 0.5f, 0.0f, 0.0f, 1.0f,
-
-    // Left face (-X) - Yellow
-    // vertex 12
-    -0.5f, -0.5f, -0.5f, 1.0f, 1.0f, 0.0f,
-    // vertex 13
-    -0.5f, -0.5f, 0.5f, 1.0f, 1.0f, 0.0f,
-    // vertex 14
-    -0.5f, 0.5f, 0.5f, 1.0f, 1.0f, 0.0f,
-    // vertex 15
-    -0.5f, 0.5f, -0.5f, 1.0f, 1.0f, 0.0f,
-
-    // Top face (+Y) - Magenta
-    // vertex 16
-    -0.5f, 0.5f, 0.5f, 1.0f, 0.0f, 1.0f,
-    // vertex 17
-    0.5f, 0.5f, 0.5f, 1.0f, 0.0f, 1.0f,
-    // vertex 18
-    0.5f, 0.5f, -0.5f, 1.0f, 0.0f, 1.0f,
-    // vertex 19
-    -0.5f, 0.5f, -0.5f, 1.0f, 0.0f, 1.0f,
-
-    // Bottom face (-Y) - Cyan
-    // vertex 20
-    -0.5f, -0.5f, -0.5f, 0.0f, 1.0f, 1.0f,
-    // vertex 21
-    0.5f, -0.5f, -0.5f, 0.0f, 1.0f, 1.0f,
-    // vertex 22
-    0.5f, -0.5f, 0.5f, 0.0f, 1.0f, 1.0f,
-    // vertex 23
-    -0.5f, -0.5f, 0.5f, 0.0f, 1.0f, 1.0f};
-
-/*
- * Index buffer:
- * 6 faces * 2 triangles * 3 indices = 36 indices.
- *
- * Every triangle uses counter-clockwise winding when viewed
- * from outside the cube, so the face normals point outward.
- */
-
-static const unsigned int cubeIndices[] = {
-
-    // Front (+Z)
-    0, 1, 2,
-    0, 2, 3,
-
-    // Back (-Z)
-    4, 5, 6,
-    4, 6, 7,
-
-    // Right (+X)
-    8, 9, 10,
-    8, 10, 11,
-
-    // Left (-X)
-    12, 13, 14,
-    12, 14, 15,
-
-    // Top (+Y)
-    16, 17, 18,
-    16, 18, 19,
-
-    // Bottom (-Y)
-    20, 21, 22,
-    20, 22, 23};
-
 int main(void)
 {
     if (isatty(STDERR_FILENO))
@@ -345,74 +234,15 @@ int main(void)
         }
     }
 
-    static vec3 instanceOffsets[CHUNK_BLOCK_COUNT];
-    int instanceCount = 0;
-
-    for (int x = 0; x < CHUNK_SIZE_X; x++)
+    mesh_t mesh;
+    if (!meshGenerateFromChunk(&chunk, &mesh, &err))
     {
-        for (int y = 0; y < CHUNK_SIZE_Y; y++)
-        {
-            for (int z = 0; z < CHUNK_SIZE_Z; z++)
-            {
-                blockId_t block;
-
-                if (!chunkGetBlock(&chunk, x, y, z, &block, &err))
-                {
-                    error("Failed to get block: " ERR_FMT, x, y, z, ERR_ARG(err));
-                    glfwDestroyWindow(window);
-                    glfwTerminate();
-                    return EXIT_FAILURE;
-                }
-
-                if (!blockIsSolid(block))
-                    continue;
-
-                instanceOffsets[instanceCount][0] = (float)x;
-                instanceOffsets[instanceCount][1] = (float)y;
-                instanceOffsets[instanceCount][2] = (float)z;
-
-                instanceCount++;
-            }
-        }
+        error("Mesh generation failed: " ERR_FMT, ERR_ARG(err));
+        glfwDestroyWindow(window);
+        glfwTerminate();
+        return EXIT_FAILURE;
     }
-
-    info("Solid blocks: %d", instanceCount);
-
-    /* --- Set up VAO + VBO + EBO --- */
-    unsigned int vao, vbo, ebo;
-    glGenVertexArrays(1, &vao);
-    glBindVertexArray(vao);
-
-    glGenBuffers(1, &vbo);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-
-    glBufferData(GL_ARRAY_BUFFER, sizeof(cubeVertices), cubeVertices, GL_STATIC_DRAW);
-
-    /* --- Instance offset VBO --- */
-    unsigned int instanceVbo;
-    glGenBuffers(1, &instanceVbo);
-    glBindBuffer(GL_ARRAY_BUFFER, instanceVbo);
-    glBufferData(GL_ARRAY_BUFFER, (size_t)instanceCount * sizeof(vec3), instanceOffsets, GL_STATIC_DRAW);
-
-    /* location 2: per-instance vec3 offset */
-    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void *)0);
-    glEnableVertexAttribArray(2);
-
-    /* Advance the attribute once per instance, not once per vertex. */
-    glVertexAttribDivisor(2, 1);
-
-    /* --- Back to cube VBO --- */
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void *)0);
-    glEnableVertexAttribArray(0);
-
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void *)(3 * sizeof(float)));
-    glEnableVertexAttribArray(1);
-
-    glGenBuffers(1, &ebo);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(cubeIndices), cubeIndices, GL_STATIC_DRAW);
+    info("Mesh generated: %u indices", mesh.indexCount);
 
     /* --- Enable depth testing --- */
     glEnable(GL_DEPTH_TEST);
@@ -466,22 +296,14 @@ int main(void)
         shaderSetMat4(&shader, "view", (const float *)view);
         shaderSetMat4(&shader, "projection", (const float *)projection);
 
-        glBindVertexArray(vao);
-        glDrawElementsInstanced(GL_TRIANGLES,
-                                sizeof(cubeIndices) / sizeof(cubeIndices[0]),
-                                GL_UNSIGNED_INT,
-                                NULL,
-                                instanceCount);
+        meshDraw(&mesh);
 
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
 
     info("Exiting...");
-    glDeleteVertexArrays(1, &vao);
-    glDeleteBuffers(1, &vbo);
-    glDeleteBuffers(1, &instanceVbo);
-    glDeleteBuffers(1, &ebo);
+    meshDestroy(&mesh);
     shaderDestroy(&shader);
     glfwDestroyWindow(window);
     glfwTerminate();
