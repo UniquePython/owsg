@@ -6,6 +6,7 @@
 #include "graphics/camera.h"
 #include "graphics/mesh.h"
 #include "world/chunk.h"
+#include "world/worldgen.h"
 #include "world/world.h"
 
 #include <stdio.h>
@@ -21,7 +22,48 @@
 #define WINDOW_HEIGHT 720
 #define WINDOW_TITLE "owsg"
 
-#define TEST_CHUNK_COUNT 2
+/*
+ * Bounds (inclusive) of the test generation grid, in CHUNK-GRID
+ * coordinates (not blocks) - e.g. GRID_MIN_X=-4, GRID_MAX_X=3 covers
+ * chunk x in [-4, 3], which is 8 chunks along that axis.
+ *
+ * TODO: this whole fixed, generate-everything-at-startup grid is a
+ * deliberate stand-in for real chunk streaming (load near the player,
+ * unload far away), which doesn't exist yet. Fine for now: it lets us
+ * SEE generated terrain without first solving streaming.
+ *
+ * Y range is intentionally smaller and asymmetric around 0 (this
+ * world's reference/"sea" level - see worldgen.h) - we want to see a
+ * bit of solid ground below it and open sky above it, not the full
+ * -35000..+45000 block world range.
+ */
+#define GRID_MIN_X (-4)
+#define GRID_MAX_X 3
+#define GRID_MIN_Y (-2)
+#define GRID_MAX_Y 3
+#define GRID_MIN_Z (-4)
+#define GRID_MAX_Z 3
+
+#define GRID_SIZE_X (GRID_MAX_X - GRID_MIN_X + 1)
+#define GRID_SIZE_Y (GRID_MAX_Y - GRID_MIN_Y + 1)
+#define GRID_SIZE_Z (GRID_MAX_Z - GRID_MIN_Z + 1)
+
+#define GRID_CHUNK_COUNT (GRID_SIZE_X * GRID_SIZE_Y * GRID_SIZE_Z)
+
+/*
+ * Starting worldgen tuning values. See worldgen.h's worldGen_t doc
+ * comment for what each one controls.
+ *
+ * TODO: these are a first guess meant to be tuned by eye once terrain
+ * is actually on screen, not principled final values - expect to
+ * change them.
+ */
+#define WORLDGEN_SEED 1234
+#define WORLDGEN_TERRAIN_FREQUENCY 0.01
+#define WORLDGEN_TERRAIN_OCTAVES 4
+#define WORLDGEN_TERRAIN_PERSISTENCE 0.5
+#define WORLDGEN_TERRAIN_LACUNARITY 2.0
+#define WORLDGEN_HEIGHT_FALLOFF_SCALE 40.0
 
 /*
  * Pairs a chunk's grid coordinate with the GPU mesh generated from it,
@@ -40,26 +82,6 @@ typedef struct
     mesh_t mesh;
 } renderChunk_t;
 
-/*
- * outChunk: non-NULL, already zero-initialized by the caller (see
- *           chunk_t's zero-init convention in chunk.h) - this
- *           function only needs to set the blocks that should be
- *           non-air.
- * err: non-NULL, populated on failure.
- *
- * Returns true on success, false on failure (propagated from
- * chunkSetBlock()).
- */
-static bool fillTestChunk(chunk_t *outChunk, owsg_err *err)
-{
-    for (int x = 0; x < CHUNK_SIZE_X; ++x)
-        for (int z = 0; z < CHUNK_SIZE_Z; ++z)
-            if (!chunkSetBlock(outChunk, x, 0, z, BLOCK_STONE, err))
-                return false;
-
-    return true;
-}
-
 int main(void)
 {
     bool useColor = isatty(STDERR_FILENO) != 0;
@@ -69,6 +91,7 @@ int main(void)
 
     window_t window;
     owsg_err err = {0};
+
     if (!windowCreate(WINDOW_WIDTH, WINDOW_HEIGHT, WINDOW_TITLE, &window, &err))
     {
         logError("Window creation failed: " ERR_FMT, ERR_ARG(err));
@@ -78,70 +101,148 @@ int main(void)
     /* --- load the shader program --- */
     shader_t shader;
     err = (owsg_err){0};
+
     const char *vertShader = "shaders/vert/shader.vert";
     const char *fragShader = "shaders/frag/shader.frag";
+
     if (!shaderCreate(vertShader, fragShader, &shader, &err))
     {
         logError("Shader program loading failed: " ERR_FMT, ERR_ARG(err));
         windowDestroy(&window);
         return EXIT_FAILURE;
     }
+
     logInfo("Loaded vertex shader: '%s' successfully!", vertShader);
     logInfo("Loaded fragment shader: '%s' successfully!", fragShader);
 
-    /* --- set up the world and its test chunks --- */
+    /* --- set up the world and its terrain generator --- */
     world_t world;
     worldInit(&world);
 
-    chunkCoord_t testCoords[TEST_CHUNK_COUNT] = {
-        {.x = 0, .y = 0, .z = 0},
-        {.x = 1, .y = 0, .z = 0},
-    };
+    worldGen_t worldGen;
+    err = (owsg_err){0};
 
-    renderChunk_t renderChunks[TEST_CHUNK_COUNT];
-
-    for (int i = 0; i < TEST_CHUNK_COUNT; ++i)
+    if (!worldGenInit(&worldGen,
+                      WORLDGEN_SEED,
+                      WORLDGEN_TERRAIN_FREQUENCY,
+                      WORLDGEN_TERRAIN_OCTAVES,
+                      WORLDGEN_TERRAIN_PERSISTENCE,
+                      WORLDGEN_TERRAIN_LACUNARITY,
+                      WORLDGEN_HEIGHT_FALLOFF_SCALE,
+                      &err))
     {
-        renderChunks[i].coord = testCoords[i];
+        logError("World generator initialization failed: " ERR_FMT, ERR_ARG(err));
+        worldDestroy(&world);
+        shaderDestroy(&shader);
+        windowDestroy(&window);
+        return EXIT_FAILURE;
+    }
 
-        chunk_t *chunk = NULL;
+    /*
+     * Allocate render state for every chunk in the generation grid.
+     *
+     * owsGAlloc() returns bool and writes the allocated pointer through
+     * its output parameter.
+     */
+    renderChunk_t *renderChunks = NULL;
 
-        if (!owsgAlloc(sizeof(*chunk), (void **)&chunk))
+    if (!owsgAlloc(sizeof(renderChunk_t) * GRID_CHUNK_COUNT, &renderChunks))
+    {
+        logError("Render chunk allocation failed");
+
+        worldGenDestroy(&worldGen);
+        worldDestroy(&world);
+        shaderDestroy(&shader);
+        windowDestroy(&window);
+        return EXIT_FAILURE;
+    }
+
+    /*
+     * Generate every chunk in the requested grid.
+     */
+    int chunkIndex = 0;
+
+    for (int x = GRID_MIN_X; x <= GRID_MAX_X; ++x)
+    {
+        for (int y = GRID_MIN_Y; y <= GRID_MAX_Y; ++y)
         {
-            logError("Chunk allocation failed");
+            for (int z = GRID_MIN_Z; z <= GRID_MAX_Z; ++z)
+            {
+                renderChunks[chunkIndex].coord = (chunkCoord_t){
+                    .x = x,
+                    .y = y,
+                    .z = z};
 
-            worldDestroy(&world);
-            shaderDestroy(&shader);
-            windowDestroy(&window);
-            return EXIT_FAILURE;
-        }
+                chunk_t *chunk = NULL;
 
-        memset(chunk, 0, sizeof(*chunk));
+                if (!owsgAlloc(sizeof(chunk_t), &chunk))
+                {
+                    logError("Chunk allocation failed");
 
-        if (!fillTestChunk(chunk, &err))
-        {
-            logError("Chunk initialization failed: " ERR_FMT, ERR_ARG(err));
+                    owsgFree(&renderChunks);
+                    worldGenDestroy(&worldGen);
+                    worldDestroy(&world);
+                    shaderDestroy(&shader);
+                    windowDestroy(&window);
+                    return EXIT_FAILURE;
+                }
 
-            owsgFree((void **)&chunk);
-            worldDestroy(&world);
-            shaderDestroy(&shader);
-            windowDestroy(&window);
-            return EXIT_FAILURE;
-        }
+                /*
+                 * chunk_t uses zero initialization as its established
+                 * initialization convention.
+                 */
+                memset(chunk, 0, sizeof(*chunk));
 
-        if (!worldSetChunk(&world, testCoords[i], chunk, &err))
-        {
-            logError("Adding chunk to world failed: " ERR_FMT, ERR_ARG(err));
+                if (!worldGenFillChunk(&worldGen,
+                                       renderChunks[chunkIndex].coord,
+                                       chunk,
+                                       &err))
+                {
+                    logError("Chunk generation failed: " ERR_FMT, ERR_ARG(err));
 
-            owsgFree((void **)&chunk);
-            worldDestroy(&world);
-            shaderDestroy(&shader);
-            windowDestroy(&window);
-            return EXIT_FAILURE;
+                    owsgFree(&chunk);
+                    owsgFree(&renderChunks);
+                    worldGenDestroy(&worldGen);
+                    worldDestroy(&world);
+                    shaderDestroy(&shader);
+                    windowDestroy(&window);
+                    return EXIT_FAILURE;
+                }
+
+                /*
+                 * worldSetChunk() takes ownership of chunk on success.
+                 * Therefore, only free chunk ourselves when this call
+                 * fails.
+                 */
+                if (!worldSetChunk(&world,
+                                   renderChunks[chunkIndex].coord,
+                                   chunk,
+                                   &err))
+                {
+                    logError("Chunk insertion failed: " ERR_FMT, ERR_ARG(err));
+
+                    owsgFree(&chunk);
+                    owsgFree(&renderChunks);
+                    worldGenDestroy(&worldGen);
+                    worldDestroy(&world);
+                    shaderDestroy(&shader);
+                    windowDestroy(&window);
+                    return EXIT_FAILURE;
+                }
+
+                ++chunkIndex;
+            }
         }
     }
 
-    for (int i = 0; i < TEST_CHUNK_COUNT; ++i)
+    /*
+     * The generator is no longer needed after all chunks have been
+     * generated.
+     */
+    worldGenDestroy(&worldGen);
+
+    /* --- generate meshes for every generated chunk --- */
+    for (int i = 0; i < GRID_CHUNK_COUNT; ++i)
     {
         chunk_t *chunk = NULL;
 
@@ -152,19 +253,25 @@ int main(void)
             for (int j = 0; j < i; ++j)
                 meshDestroy(&renderChunks[j].mesh);
 
+            owsgFree(&renderChunks);
             worldDestroy(&world);
             shaderDestroy(&shader);
             windowDestroy(&window);
             return EXIT_FAILURE;
         }
 
-        if (!meshGenerateFromChunk(&world, renderChunks[i].coord, chunk, &renderChunks[i].mesh, &err))
+        if (!meshGenerateFromChunk(&world,
+                                   renderChunks[i].coord,
+                                   chunk,
+                                   &renderChunks[i].mesh,
+                                   &err))
         {
             logError("Chunk mesh generation failed: " ERR_FMT, ERR_ARG(err));
 
             for (int j = 0; j < i; ++j)
                 meshDestroy(&renderChunks[j].mesh);
 
+            owsgFree(&renderChunks);
             worldDestroy(&world);
             shaderDestroy(&shader);
             windowDestroy(&window);
@@ -192,20 +299,25 @@ int main(void)
         int width, height;
         windowGetFramebufferSize(&window, &width, &height);
 
-        glClearColor(0.0f, 0.0f, 0.0f, 1.0f); // Black
+        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         mat4 view;
         cameraGetViewMatrix(&camera, view);
 
         mat4 projection;
-        cameraGetProjectionMatrix(&camera, (float)width / (float)height, 0.1f, 100.0f, projection);
+        cameraGetProjectionMatrix(
+            &camera,
+            (float)width / (float)height,
+            0.1f,
+            100.0f,
+            projection);
 
         shaderUse(&shader);
         shaderSetMat4(&shader, "view", (const float *)view);
         shaderSetMat4(&shader, "projection", (const float *)projection);
 
-        for (int i = 0; i < TEST_CHUNK_COUNT; ++i)
+        for (int i = 0; i < GRID_CHUNK_COUNT; ++i)
         {
             mat4 model;
             glm_mat4_identity(model);
@@ -226,11 +338,17 @@ int main(void)
 
     logInfo("Exiting...");
 
-    for (int i = 0; i < TEST_CHUNK_COUNT; ++i)
+    for (int i = 0; i < GRID_CHUNK_COUNT; ++i)
         meshDestroy(&renderChunks[i].mesh);
 
-    worldDestroy(&world); /* frees every chunk_t the world owns */
+    owsgFree(&renderChunks);
+
+    /*
+     * worldDestroy() frees every chunk_t owned by the world.
+     */
+    worldDestroy(&world);
     shaderDestroy(&shader);
     windowDestroy(&window);
+
     return EXIT_SUCCESS;
 }
