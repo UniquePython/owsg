@@ -126,6 +126,30 @@ void worldBlockToChunkLocal(int32_t wx, int32_t wy, int32_t wz,
                             int *outLocalX, int *outLocalY, int *outLocalZ);
 
 /*
+ * Inverse of worldBlockToChunkLocal(): converts a chunk-grid
+ * coordinate plus a local coordinate within that chunk into a single
+ * world-space block coordinate.
+ *
+ * coord: chunk-grid coordinate.
+ * localX, localY, localZ: local coordinates within that chunk, each
+ *          expected in [0, CHUNK_SIZE_* - 1]. Behavior is undefined
+ *          (silently produces a nonsensical result, not a crash) if
+ *          out of range - this mirrors chunkBlockIndex()'s own
+ *          "caller's responsibility" contract rather than
+ *          worldBlockToChunkLocal()'s guarantee, since the two
+ *          functions have different jobs: that one PRODUCES a
+ *          guaranteed-valid local coordinate; this one CONSUMES one
+ *          the caller already has.
+ * outWx, outWy, outWz: non-NULL, each receives the corresponding
+ *          world-space block coordinate.
+ *
+ * Same no-failure-mode reasoning as worldBlockToChunkLocal() applies
+ * here, so this is void/no owsg_err as well.
+ */
+void worldChunkLocalToBlock(chunkCoord_t coord, int localX, int localY, int localZ,
+                            int32_t *outWx, int32_t *outWy, int32_t *outWz);
+
+/*
  * Result of a world-space block lookup - distinguishes "this position
  * is definitely air/solid" from "we don't know yet" (the chunk
  * containing it isn't loaded), so callers (chiefly meshing) can react

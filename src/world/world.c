@@ -102,6 +102,14 @@ void worldBlockToChunkLocal(int32_t wx, int32_t wy, int32_t wz,
     *outLocalZ = floorMod(wz, CHUNK_SIZE_Z);
 }
 
+void worldChunkLocalToBlock(chunkCoord_t coord, int localX, int localY, int localZ,
+                            int32_t *outWx, int32_t *outWy, int32_t *outWz)
+{
+    *outWx = coord.x * CHUNK_SIZE_X + localX;
+    *outWy = coord.y * CHUNK_SIZE_Y + localY;
+    *outWz = coord.z * CHUNK_SIZE_Z + localZ;
+}
+
 bool worldGetBlock(const world_t *world, int32_t wx, int32_t wy, int32_t wz,
                    blockId_t *outBlock, blockLookupResult_t *outResult, owsg_err *err)
 {
