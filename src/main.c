@@ -1,4 +1,5 @@
 #include "util/owsg_err.h"
+#include "util/log.h"
 #include "graphics/shader.h"
 #include "graphics/camera.h"
 #include "graphics/mesh.h"
@@ -22,43 +23,6 @@
 #define WINDOW_HEIGHT 720
 #define WINDOW_TITLE "owsg"
 
-static bool useColor = false;
-
-#define ANSI_RED "\033[31m"
-#define ANSI_YELLOW "\033[33m"
-#define ANSI_BOLD "\033[1m"
-#define ANSI_NO_BOLD "\033[22m"
-#define ANSI_RESET "\033[0m"
-
-static void log_message(const char *label, const char *color, const char *fmt, va_list args)
-{
-    if (useColor)
-        fprintf(stderr, "%s%s[%s]%s ", color, ANSI_BOLD, label, ANSI_NO_BOLD);
-
-    vfprintf(stderr, fmt, args);
-
-    if (useColor)
-        fprintf(stderr, ANSI_RESET);
-
-    fprintf(stderr, "\n");
-}
-
-static void error(const char *fmt, ...)
-{
-    va_list args;
-    va_start(args, fmt);
-    log_message("ERROR", ANSI_RED, fmt, args);
-    va_end(args);
-}
-
-static void info(const char *fmt, ...)
-{
-    va_list args;
-    va_start(args, fmt);
-    log_message("INFO", ANSI_YELLOW, fmt, args);
-    va_end(args);
-}
-
 /*
  * GLFW error callback. GLFW does not print errors itself; it hands
  * them to a callback you register, so failures are silent unless you
@@ -66,7 +30,7 @@ static void info(const char *fmt, ...)
  */
 static void glfwErrorCallback(int errorCode, const char *description)
 {
-    error("%s (%d)", description, errorCode);
+    logError("%s (%d)", description, errorCode);
 }
 
 /*
@@ -132,22 +96,22 @@ static void cursorPosCallback(GLFWwindow *window, double xpos, double ypos)
 
 int main(void)
 {
-    if (isatty(STDERR_FILENO))
-        useColor = true;
+    bool useColor = isatty(STDERR_FILENO) != 0;
+    logSetColorEnabled(useColor);
 
-    info("Colored output: %s", useColor ? "enabled" : "disabled");
+    logInfo("Colored output: %s", useColor ? "enabled" : "disabled");
 
     /* --- GLFW init --- */
     glfwSetErrorCallback(glfwErrorCallback);
-    info("GLFW error callback set successfully!");
+    logInfo("GLFW error callback set successfully!");
 
     if (glfwInit() == GLFW_FALSE)
     {
-        error("GLFW initialization failed");
+        logError("GLFW initialization failed");
         return EXIT_FAILURE;
     }
 
-    info("GLFW initialized successfully!");
+    logInfo("GLFW initialized successfully!");
 
     /* --- window hints --- */
     /*
@@ -165,27 +129,27 @@ int main(void)
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
 
-    info("GLFW version: 3.3");
-    info("GLFW profile: Core");
-    info("GLFW forward compatibility: enabled");
+    logInfo("GLFW version: 3.3");
+    logInfo("GLFW profile: Core");
+    logInfo("GLFW forward compatibility: enabled");
 
     /* --- create the window + context --- */
     GLFWwindow *window = glfwCreateWindow(WINDOW_WIDTH, WINDOW_HEIGHT, WINDOW_TITLE, NULL, NULL);
     if (window == NULL)
     {
-        error("GLFW window and context creation failed");
+        logError("GLFW window and context creation failed");
         glfwTerminate();
         return EXIT_FAILURE;
     }
-    info("GLFW window and context created successfully!");
+    logInfo("GLFW window and context created successfully!");
 
     /* --- make context current --- */
     glfwMakeContextCurrent(window);
-    info("GLFW context set to current window successfully!");
+    logInfo("GLFW context set to current window successfully!");
 
     /* Register the resize callback now that we have a window. */
     glfwSetFramebufferSizeCallback(window, framebufferSizeCallback);
-    info("GLFW framebuffer size callback set successfully!");
+    logInfo("GLFW framebuffer size callback set successfully!");
 
     /* Register mouse callback */
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
@@ -195,12 +159,12 @@ int main(void)
     int version = gladLoadGL(glfwGetProcAddress);
     if (version == 0)
     {
-        error("GL function pointers loading failed");
+        logError("GL function pointers loading failed");
         glfwTerminate();
         return EXIT_FAILURE;
     }
-    info("OpenGL version: %s", glGetString(GL_VERSION));
-    info("OpenGL renderer: %s", glGetString(GL_RENDERER));
+    logInfo("OpenGL version: %s", glGetString(GL_VERSION));
+    logInfo("OpenGL renderer: %s", glGetString(GL_RENDERER));
 
     /* --- load the shader program --- */
     shader_t shader;
@@ -209,12 +173,12 @@ int main(void)
     const char *fragShader = "shaders/frag/shader.frag";
     if (!shaderCreate(vertShader, fragShader, &shader, &err))
     {
-        error("Shader program loading failed: " ERR_FMT, ERR_ARG(err));
+        logError("Shader program loading failed: " ERR_FMT, ERR_ARG(err));
         glfwTerminate();
         return EXIT_FAILURE;
     }
-    info("Loaded vertex shader: '%s' successfully!", vertShader);
-    info("Loaded fragment shader: '%s' successfully!", fragShader);
+    logInfo("Loaded vertex shader: '%s' successfully!", vertShader);
+    logInfo("Loaded fragment shader: '%s' successfully!", fragShader);
 
     chunk_t chunk = {0}; /* zero-initialized => all-air */
     err = (owsg_err){0};
@@ -225,7 +189,7 @@ int main(void)
         {
             if (!chunkSetBlock(&chunk, x, 0, z, BLOCK_STONE, &err))
             {
-                error("Failed to set block: " ERR_FMT, ERR_ARG(err));
+                logError("Failed to set block: " ERR_FMT, ERR_ARG(err));
 
                 glfwDestroyWindow(window);
                 glfwTerminate();
@@ -237,16 +201,16 @@ int main(void)
     mesh_t mesh;
     if (!meshGenerateFromChunk(&chunk, &mesh, &err))
     {
-        error("Mesh generation failed: " ERR_FMT, ERR_ARG(err));
+        logError("Mesh generation failed: " ERR_FMT, ERR_ARG(err));
         glfwDestroyWindow(window);
         glfwTerminate();
         return EXIT_FAILURE;
     }
-    info("Mesh generated: %u indices", mesh.indexCount);
+    logInfo("Mesh generated: %u indices", mesh.indexCount);
 
     /* --- Enable depth testing --- */
     glEnable(GL_DEPTH_TEST);
-    info("Depth testing: enabled");
+    logInfo("Depth testing: enabled");
 
     /* Model matrix: local -> world space. */
     mat4 model;
@@ -302,7 +266,7 @@ int main(void)
         glfwPollEvents();
     }
 
-    info("Exiting...");
+    logInfo("Exiting...");
     meshDestroy(&mesh);
     shaderDestroy(&shader);
     glfwDestroyWindow(window);
