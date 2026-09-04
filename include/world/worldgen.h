@@ -143,9 +143,7 @@ bool worldGenDensity(const worldGen_t *worldGen, int32_t wx, int32_t wy, int32_t
  * worldGen: non-NULL world generator (see worldGenDensity()).
  * wx, wy, wz: world-space coordinates of the SOLID block being
  *             probed (not the neighbor above it).
- * maxDepth: maximum number of blocks to search upward before giving
- *           up. TODO: pick a value - how many blocks "dirt" should
- *           span suggests a lower bound.
+ * maxDepth: maximum number of blocks to search upward before giving up.
  * outDepth: non-NULL output pointer. On success, set to the number
  *           of solid blocks strictly between (wx,wy,wz) and the
  *           first air block above it - 0 if (wx,wy+1,wz) is already

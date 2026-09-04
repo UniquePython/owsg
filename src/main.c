@@ -33,12 +33,12 @@
  * bit of solid ground below it and open sky above it, not the full
  * -35000..+45000 block world range.
  */
-#define GRID_MIN_X (-8)
-#define GRID_MAX_X 6
-#define GRID_MIN_Y (-4)
-#define GRID_MAX_Y 6
-#define GRID_MIN_Z (-8)
-#define GRID_MAX_Z 6
+#define GRID_MIN_X (-4)
+#define GRID_MAX_X 3
+#define GRID_MIN_Y (-2)
+#define GRID_MAX_Y 3
+#define GRID_MIN_Z (-4)
+#define GRID_MAX_Z 3
 
 #define GRID_SIZE_X (GRID_MAX_X - GRID_MIN_X + 1)
 #define GRID_SIZE_Y (GRID_MAX_Y - GRID_MIN_Y + 1)

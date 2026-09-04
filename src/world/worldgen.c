@@ -140,7 +140,26 @@ bool worldGenFillChunk(const worldGen_t *worldGen, chunkCoord_t chunkCoord, chun
                 if (!worldGenDensity(worldGen, wx, wy, wz, &density, err))
                     return false;
 
-                blockType_t block = density > 0.0 ? BLOCK_STONE : BLOCK_AIR;
+                blockType_t block;
+
+                if (density > 0.0)
+                {
+                    int surfaceDepth;
+
+                    if (!worldGenSurfaceDepth(worldGen, wx, wy, wz, 10, &surfaceDepth, err))
+                        return false;
+
+                    if (surfaceDepth == 0)
+                        block = BLOCK_GRASS;
+                    else if (surfaceDepth < 10)
+                        block = BLOCK_DIRT;
+                    else
+                        block = BLOCK_STONE;
+                }
+                else
+                {
+                    block = BLOCK_AIR;
+                }
 
                 if (!chunkSetBlock(outChunk, x, y, z, block, err))
                     return false;
