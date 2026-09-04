@@ -73,6 +73,45 @@ bool worldGenDensity(const worldGen_t *worldGen, int32_t wx, int32_t wy, int32_t
     return true;
 }
 
+bool worldGenSurfaceDepth(const worldGen_t *worldGen, int32_t wx, int32_t wy, int32_t wz,
+                          int maxDepth, int *outDepth, owsg_err *err)
+{
+    if (worldGen == NULL)
+    {
+        owsgErrSet(err, "World generator is NULL");
+        return false;
+    }
+
+    if (outDepth == NULL)
+    {
+        owsgErrSet(err, "Output depth pointer is NULL");
+        return false;
+    }
+
+    if (maxDepth < 0)
+    {
+        owsgErrSet(err, "maxDepth must be >= 0 (got %d)", maxDepth);
+        return false;
+    }
+
+    for (int depth = 0; depth <= maxDepth; ++depth)
+    {
+        double density;
+
+        if (!worldGenDensity(worldGen, wx, wy + depth + 1, wz, &density, err))
+            return false;
+
+        if (density <= 0.0)
+        {
+            *outDepth = depth;
+            return true;
+        }
+    }
+
+    *outDepth = maxDepth;
+    return true;
+}
+
 bool worldGenFillChunk(const worldGen_t *worldGen, chunkCoord_t chunkCoord, chunk_t *outChunk, owsg_err *err)
 {
     if (worldGen == NULL)

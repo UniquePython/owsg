@@ -123,6 +123,42 @@ void worldGenDestroy(worldGen_t *worldGen);
 bool worldGenDensity(const worldGen_t *worldGen, int32_t wx, int32_t wy, int32_t wz, double *outDensity, owsg_err *err);
 
 /*
+ * Measures how many blocks of solid material lie directly above the
+ * given world-space block position before open air (density <= 0.0)
+ * is reached, by walking upward and re-sampling worldGenDensity() at
+ * each step.
+ *
+ * Used to decide surface block type: a block touching air above it
+ * (depth 0) becomes grass, a few blocks below that becomes dirt, and
+ * anything deeper than maxDepth is treated as "not near the surface"
+ * (stone) without bothering to search further - saves noise samples
+ * for blocks buried deep underground where the answer doesn't matter.
+ *
+ * IMPORTANT: this samples worldGenDensity() directly (NOT chunk_t /
+ * world_t block lookups). worldGenFillChunk() may be filling a chunk
+ * whose neighbor-above isn't generated yet, so density is the only
+ * source of truth available at generation time that works
+ * correctly regardless of chunk generation order.
+ *
+ * worldGen: non-NULL world generator (see worldGenDensity()).
+ * wx, wy, wz: world-space coordinates of the SOLID block being
+ *             probed (not the neighbor above it).
+ * maxDepth: maximum number of blocks to search upward before giving
+ *           up. TODO: pick a value - how many blocks "dirt" should
+ *           span suggests a lower bound.
+ * outDepth: non-NULL output pointer. On success, set to the number
+ *           of solid blocks strictly between (wx,wy,wz) and the
+ *           first air block above it - 0 if (wx,wy+1,wz) is already
+ *           air, up to maxDepth if no air was found within range.
+ * err: non-NULL error object, populated on failure (propagated from
+ *      worldGenDensity()).
+ *
+ * Returns true on success (*outDepth is valid), false on failure.
+ */
+bool worldGenSurfaceDepth(const worldGen_t *worldGen, int32_t wx, int32_t wy, int32_t wz,
+                          int maxDepth, int *outDepth, owsg_err *err);
+
+/*
  * Fills every block of a chunk using worldGenDensity(): a block is
  * BLOCK_STONE if density > 0, BLOCK_AIR otherwise.
  *
