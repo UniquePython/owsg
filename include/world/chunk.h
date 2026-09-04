@@ -29,6 +29,8 @@ typedef enum
 {
     BLOCK_AIR = 0,
     BLOCK_STONE = 1,
+    BLOCK_DIRT = 2,
+    BLOCK_GRASS = 3,
     /* TODO: add more as needed */
 } blockType_t;
 

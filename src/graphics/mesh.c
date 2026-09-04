@@ -99,6 +99,19 @@ static void getBlockColor(blockId_t block, float outColor[3])
         outColor[1] = 0.5f;
         outColor[2] = 0.5f;
         break;
+
+    case BLOCK_DIRT:
+        outColor[0] = 0.40f;
+        outColor[1] = 0.25f;
+        outColor[2] = 0.12f;
+        break;
+
+    case BLOCK_GRASS:
+        outColor[0] = 0.25f;
+        outColor[1] = 0.65f;
+        outColor[2] = 0.15f;
+        break;
+
     default:
         outColor[0] = 1.0f;
         outColor[1] = 0.0f;
